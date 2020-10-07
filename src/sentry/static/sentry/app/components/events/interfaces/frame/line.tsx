@@ -4,27 +4,32 @@ import classNames from 'classnames';
 import scrollToElement from 'scroll-to-element';
 import styled from '@emotion/styled';
 
+import Button from 'app/components/button';
 import {defined, objectIsEmpty} from 'app/utils';
 import {t} from 'app/locale';
-import TogglableAddress from 'app/components/events/interfaces/togglableAddress';
+import TogglableAddress, {
+  AddressToggleIcon,
+} from 'app/components/events/interfaces/togglableAddress';
 import PackageLink from 'app/components/events/interfaces/packageLink';
-import PackageStatus from 'app/components/events/interfaces/packageStatus';
+import PackageStatus, {
+  PackageStatusIcon,
+} from 'app/components/events/interfaces/packageStatus';
 import StrictClick from 'app/components/strictClick';
-import Tooltip from 'app/components/tooltip';
 import space from 'app/styles/space';
 import withSentryAppComponents from 'app/utils/withSentryAppComponents';
 import {DebugMetaActions} from 'app/stores/debugMetaStore';
 import {SymbolicatorStatus} from 'app/components/events/interfaces/types';
 import {combineStatus} from 'app/components/events/interfaces/debugMeta/utils';
-import {IconRefresh, IconAdd, IconSubtract, IconQuestion, IconWarning} from 'app/icons';
+import {IconRefresh, IconChevron} from 'app/icons';
 import overflowEllipsis from 'app/styles/overflowEllipsis';
 import {Frame, SentryAppComponent, PlatformType} from 'app/types';
 import DebugImage from 'app/components/events/interfaces/debugMeta/debugImage';
+import {ListItem} from 'app/components/list';
 
-import FrameDefaultTitle from './frameDefaultTitle';
-import FrameContext from './frameContext';
-import FrameFunctionName from './frameFunctionName';
+import Context from './context';
+import DefaultTitle from './defaultTitle';
 import {getPlatform} from './utils';
+import Symbol, {FunctionNameToggleIcon} from './symbol';
 
 type Props = {
   data: Frame;
@@ -37,17 +42,22 @@ type Props = {
   registers: Record<string, string>;
   components: Array<SentryAppComponent>;
   showingAbsoluteAddress: boolean;
-  onAddressToggle: React.MouseEventHandler<SVGElement>;
+  onAddressToggle: (event: React.MouseEvent<SVGElement>) => void;
+  onFunctionNameToggle: (
+    frameID: string
+  ) => (event: React.MouseEvent<SVGElement>) => void;
+  showCompleteFunctionName: boolean;
   image: React.ComponentProps<typeof DebugImage>['image'];
   maxLengthOfRelativeAddress: number;
   isExpanded?: boolean;
+  frameID?: number;
 };
 
 type State = {
   isExpanded?: boolean;
 };
 
-export class FrameLine extends React.Component<Props, State> {
+export class Line extends React.Component<Props, State> {
   static propTypes: any = {
     data: PropTypes.object.isRequired,
     nextFrame: PropTypes.object,
@@ -60,9 +70,12 @@ export class FrameLine extends React.Component<Props, State> {
     registers: PropTypes.objectOf(PropTypes.string.isRequired),
     components: PropTypes.array.isRequired,
     showingAbsoluteAddress: PropTypes.bool,
+    showCompleteFunctionName: PropTypes.bool,
     onAddressToggle: PropTypes.func,
+    onFunctionNameToggle: PropTypes.func,
     image: PropTypes.object,
     maxLengthOfRelativeAddress: PropTypes.number,
+    frameID: PropTypes.number,
   };
 
   static defaultProps = {
@@ -90,7 +103,7 @@ export class FrameLine extends React.Component<Props, State> {
   }
 
   hasContextVars() {
-    return !objectIsEmpty(this.props.data.vars);
+    return !objectIsEmpty(this.props.data.vars || {});
   }
 
   hasContextRegisters() {
@@ -166,16 +179,17 @@ export class FrameLine extends React.Component<Props, State> {
     if (!this.isExpandable()) {
       return null;
     }
+
+    const {isExpanded} = this.state;
+
     return (
-      <a
-        key="expander"
-        title={t('Toggle context')}
-        onClick={this.toggleContext}
-        className="btn btn-default btn-toggle"
-        css={this.getPlatform() === 'csharp' && {display: 'block !important'}} // remove important once we get rid of css files
-      >
-        {this.state.isExpanded ? <IconSubtract size="8px" /> : <IconAdd size="8px" />}
-      </a>
+      <ToogleContextButton title={t('Toggle Context')} onClick={this.toggleContext}>
+        <StyledIconChevron
+          isExpanded={!!isExpanded}
+          direction={isExpanded ? 'up' : 'down'}
+          size="8px"
+        />
+      </ToogleContextButton>
     );
   }
 
@@ -189,58 +203,12 @@ export class FrameLine extends React.Component<Props, State> {
     return data.trust === 'scan' || data.trust === 'cfi-scan';
   }
 
-  getFrameHint() {
-    // returning [hintText, hintIcon]
-    const {symbolicatorStatus} = this.props.data;
-    const func = this.props.data.function || '<unknown>';
-    // Custom color used to match adjacent text.
-    const warningIcon = <IconQuestion size="xs" color={'#2c45a8' as any} />;
-    const errorIcon = <IconWarning size="xs" color="red400" />;
-
-    if (func.match(/^@objc\s/)) {
-      return [t('Objective-C -> Swift shim frame'), warningIcon];
-    }
-    if (func.match(/^__?hidden#\d+/)) {
-      return [t('Hidden function from bitcode build'), errorIcon];
-    }
-    if (!symbolicatorStatus && func === '<unknown>') {
-      // Only render this if the event was not symbolicated.
-      return [t('No function name was supplied by the client SDK.'), warningIcon];
-    }
-
-    if (
-      func === '<unknown>' ||
-      (func === '<redacted>' && symbolicatorStatus === SymbolicatorStatus.MISSING_SYMBOL)
-    ) {
-      switch (symbolicatorStatus) {
-        case SymbolicatorStatus.MISSING_SYMBOL:
-          return [t('The symbol was not found within the debug file.'), warningIcon];
-        case SymbolicatorStatus.UNKNOWN_IMAGE:
-          return [t('No image is specified for the address of the frame.'), warningIcon];
-        case SymbolicatorStatus.MISSING:
-          return [
-            t('The debug file could not be retrieved from any of the sources.'),
-            errorIcon,
-          ];
-        case SymbolicatorStatus.MALFORMED:
-          return [t('The retrieved debug file could not be processed.'), errorIcon];
-        default:
-      }
-    }
-
-    if (func === '<redacted>') {
-      return [t('Unknown system frame. Usually from beta SDKs'), warningIcon];
-    }
-
-    return [null, null];
-  }
-
   renderLeadHint() {
     if (this.leadsToApp() && !this.state.isExpanded) {
       return <LeadHint className="leads-to-app-hint">{t('Called from: ')}</LeadHint>;
-    } else {
-      return null;
     }
+
+    return null;
   }
 
   renderRepeats() {
@@ -256,9 +224,9 @@ export class FrameLine extends React.Component<Props, State> {
           </RepeatedContent>
         </RepeatedFrames>
       );
-    } else {
-      return null;
     }
+
+    return null;
   }
 
   renderDefaultLine() {
@@ -268,7 +236,7 @@ export class FrameLine extends React.Component<Props, State> {
           <VertCenterWrapper>
             <div>
               {this.renderLeadHint()}
-              <FrameDefaultTitle frame={this.props.data} platform={this.props.platform} />
+              <DefaultTitle frame={this.props.data} platform={this.props.platform} />
             </div>
             {this.renderRepeats()}
           </VertCenterWrapper>
@@ -283,13 +251,15 @@ export class FrameLine extends React.Component<Props, State> {
       data,
       showingAbsoluteAddress,
       onAddressToggle,
+      onFunctionNameToggle,
       image,
       maxLengthOfRelativeAddress,
+      showCompleteFunctionName,
+      frameID,
     } = this.props;
-    const [hint, hintIcon] = this.getFrameHint();
 
-    const enablePathTooltip = defined(data.absPath) && data.absPath !== data.filename;
     const leadHint = this.renderLeadHint();
+    const packageStatus = this.packageStatus();
 
     return (
       <StrictClick onClick={this.isExpandable() ? this.toggleContext : undefined}>
@@ -303,7 +273,7 @@ export class FrameLine extends React.Component<Props, State> {
                 onClick={this.scrollToImage}
                 isClickable={this.shouldShowLinkToImage()}
               >
-                <PackageStatus status={this.packageStatus()} />
+                <PackageStatus status={packageStatus} tooltip={t('Image loaded')} />
               </PackageLink>
             </PackageInfo>
             {data.instructionAddr && (
@@ -314,25 +284,15 @@ export class FrameLine extends React.Component<Props, State> {
                 isFoundByStackScanning={this.isFoundByStackScanning()}
                 isInlineFrame={this.isInlineFrame()}
                 onToggle={onAddressToggle}
-                maxLengthOfRelativeAddress={maxLengthOfRelativeAddress}
+                relativeAddressMaxlength={maxLengthOfRelativeAddress}
               />
             )}
-            <Symbol className="symbol">
-              <FrameFunctionName frame={data} />{' '}
-              {hint !== null ? (
-                <HintStatus>
-                  <Tooltip title={hint}>{hintIcon}</Tooltip>
-                </HintStatus>
-              ) : null}
-              {data.filename && (
-                <Tooltip title={data.absPath} disabled={!enablePathTooltip}>
-                  <span className="filename">
-                    {data.filename}
-                    {data.lineNo ? ':' + data.lineNo : ''}
-                  </span>
-                </Tooltip>
-              )}
-            </Symbol>
+            <Symbol
+              frame={data}
+              frameID={frameID}
+              showCompleteFunctionName={showCompleteFunctionName}
+              onFunctionNameToggle={onFunctionNameToggle}
+            />
           </NativeLineContent>
           {this.renderExpander()}
         </DefaultLine>
@@ -355,6 +315,7 @@ export class FrameLine extends React.Component<Props, State> {
 
   render() {
     const data = this.props.data;
+
     const className = classNames({
       frame: true,
       'is-expandable': this.isExpandable(),
@@ -368,9 +329,9 @@ export class FrameLine extends React.Component<Props, State> {
     const props = {className};
 
     return (
-      <li {...props}>
+      <StyledListItem {...props}>
         {this.renderLine()}
-        <FrameContext
+        <Context
           frame={data}
           registers={this.props.registers}
           components={this.props.components}
@@ -382,10 +343,11 @@ export class FrameLine extends React.Component<Props, State> {
           expandable={this.isExpandable()}
           isExpanded={this.state.isExpanded}
         />
-      </li>
+      </StyledListItem>
     );
   }
 }
+export default withSentryAppComponents(Line, {componentType: 'stacktrace-link'});
 
 const RepeatedFrames = styled('div')`
   display: inline-block;
@@ -443,25 +405,6 @@ const DefaultLine = styled('div')`
   align-items: center;
 `;
 
-const HintStatus = styled('span')`
-  position: relative;
-  top: ${space(0.25)};
-  margin: 0 ${space(0.75)} 0 -${space(0.25)};
-`;
-
-const Symbol = styled('span')`
-  text-align: left;
-  grid-column-start: 1;
-  grid-column-end: -1;
-  order: 3;
-
-  @media (min-width: ${props => props.theme.breakpoints[0]}) {
-    order: 0;
-    grid-column-start: auto;
-    grid-column-end: auto;
-  }
-`;
-
 const StyledIconRefresh = styled(IconRefresh)`
   margin-right: ${space(0.25)};
 `;
@@ -471,4 +414,43 @@ const LeadHint = styled('div')`
   width: 67px;
 `;
 
-export default withSentryAppComponents(FrameLine, {componentType: 'stacktrace-link'});
+const StyledIconChevron = styled(IconChevron, {
+  shouldForwardProp: prop => prop !== 'isExpanded',
+})<{isExpanded: boolean}>`
+  transform: rotate(${p => (p.isExpanded ? '180deg' : '0deg')});
+  transition: 0.1s all;
+`;
+
+// the Buton's label has the padding of 3px because the button size has to be 16x16 px.
+const ToogleContextButton = styled(Button)`
+  span:first-child {
+    padding: 3px;
+  }
+`;
+
+const StyledListItem = styled(ListItem)`
+  padding-left: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  ${PackageStatusIcon} {
+    flex-shrink: 0;
+  }
+  :hover {
+    ${PackageStatusIcon} {
+      visibility: visible;
+    }
+    ${AddressToggleIcon} {
+      visibility: visible;
+    }
+    ${FunctionNameToggleIcon} {
+      visibility: visible;
+    }
+  }
+  ul &:before {
+    content: none;
+  }
+  > *:first-child {
+    flex: 1;
+    width: 100%;
+  }
+`;

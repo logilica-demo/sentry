@@ -12,9 +12,9 @@ import {t} from 'app/locale';
 import {getMeta} from 'app/components/events/meta/metaProxy';
 import space from 'app/styles/space';
 
-import FrameFunctionName from './frameFunctionName';
-import {getPlatform, trimPackage} from './utils';
-import FrameDefaultTitleOriginalSourceInfo from './frameDefaultTitleOriginalSourceInfo';
+import FunctionName from '../functionName';
+import {getPlatform, trimPackage} from '../utils';
+import OriginalSourceInfo from './originalSourceInfo';
 
 type Props = {
   frame: Frame;
@@ -23,7 +23,7 @@ type Props = {
 
 type GetPathNameOutput = {key: string; value: string; meta?: Meta};
 
-const FrameDefaultTitle = ({frame, platform}: Props) => {
+const DefaultTitle = ({frame, platform}: Props) => {
   const title: Array<React.ReactElement> = [];
   const framePlatform = getPlatform(frame.platform, platform);
 
@@ -31,7 +31,9 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
     event.stopPropagation();
   };
 
-  const getPathName = (shouldPrioritizeModuleName: boolean): GetPathNameOutput => {
+  const getPathName = (
+    shouldPrioritizeModuleName: boolean
+  ): GetPathNameOutput | undefined => {
     if (shouldPrioritizeModuleName) {
       if (frame.module) {
         return {
@@ -40,11 +42,14 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
           meta: getMeta(frame, 'module'),
         };
       }
-      return {
-        key: 'filename',
-        value: frame.filename,
-        meta: getMeta(frame, 'filename'),
-      };
+      if (frame.filename) {
+        return {
+          key: 'filename',
+          value: frame.filename,
+          meta: getMeta(frame, 'filename'),
+        };
+      }
+      return undefined;
     }
 
     if (frame.filename) {
@@ -55,11 +60,15 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
       };
     }
 
-    return {
-      key: 'module',
-      value: frame.module,
-      meta: getMeta(frame, 'module'),
-    };
+    if (frame.module) {
+      return {
+        key: 'module',
+        value: frame.module,
+        meta: getMeta(frame, 'module'),
+      };
+    }
+
+    return undefined;
   };
 
   // TODO(dcramer): this needs to use a formatted string so it can be
@@ -70,18 +79,20 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
       framePlatform === 'java' || framePlatform === 'csharp';
 
     const pathName = getPathName(shouldPrioritizeModuleName);
-    const enablePathTooltip = defined(frame.absPath) && frame.absPath !== pathName.value;
+    const enablePathTooltip = defined(frame.absPath) && frame.absPath !== pathName?.value;
 
-    title.push(
-      <Tooltip key={pathName.key} title={frame.absPath} disabled={!enablePathTooltip}>
-        <code key="filename" className="filename">
-          <AnnotatedText
-            value={<Truncate value={pathName.value} maxLength={100} leftTrim />}
-            meta={pathName.meta}
-          />
-        </code>
-      </Tooltip>
-    );
+    if (pathName) {
+      title.push(
+        <Tooltip key={pathName.key} title={frame.absPath} disabled={!enablePathTooltip}>
+          <code key="filename" className="filename">
+            <AnnotatedText
+              value={<Truncate value={pathName.value} maxLength={100} leftTrim />}
+              meta={pathName.meta}
+            />
+          </code>
+        </Tooltip>
+      );
+    }
 
     // in case we prioritized the module name but we also have a filename info
     // we want to show a litle (?) icon that on hover shows the actual filename
@@ -113,7 +124,7 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
   }
 
   if (defined(frame.function) || defined(frame.rawFunction)) {
-    title.push(<FrameFunctionName frame={frame} key="function" className="function" />);
+    title.push(<FunctionName frame={frame} key="function" className="function" />);
   }
 
   // we don't want to render out zero line numbers which are used to
@@ -149,9 +160,7 @@ const FrameDefaultTitle = ({frame, platform}: Props) => {
     title.push(
       <Tooltip
         key="info-tooltip"
-        title={
-          <FrameDefaultTitleOriginalSourceInfo mapUrl={frame.mapUrl} map={frame.map} />
-        }
+        title={<OriginalSourceInfo mapUrl={frame.mapUrl} map={frame.map} />}
       >
         <a className="in-at original-src">
           <IconQuestion size="xs" />
@@ -169,4 +178,4 @@ const StyledExternalLink = styled(ExternalLink)`
   margin-left: ${space(0.5)};
 `;
 
-export default FrameDefaultTitle;
+export default DefaultTitle;

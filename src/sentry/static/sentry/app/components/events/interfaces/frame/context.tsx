@@ -29,7 +29,7 @@ type Props = {
   components: Array<SentryAppComponent>;
 };
 
-const FrameContext = ({
+const Context = ({
   hasContextVars = false,
   hasContextSource = false,
   hasContextRegisters = false,
@@ -97,7 +97,7 @@ const FrameContext = ({
                   <OpenInContextLine
                     key={index}
                     lineNo={line[0]}
-                    filename={frame.filename}
+                    filename={frame.filename || ''}
                     components={components}
                   />
                 </ErrorBoundary>
@@ -109,7 +109,7 @@ const FrameContext = ({
       {(hasContextRegisters || hasContextVars) && (
         <StyledClippedBox clipHeight={100}>
           {hasContextRegisters && <FrameRegisters data={registers} key="registers" />}
-          {hasContextVars && <FrameVariables data={frame.vars} key="vars" />}
+          {hasContextVars && <FrameVariables data={frame.vars || {}} key="vars" />}
         </StyledClippedBox>
       )}
 
@@ -120,7 +120,7 @@ const FrameContext = ({
   );
 };
 
-export default FrameContext;
+export default Context;
 
 const StyledClippedBox = styled(ClippedBox)`
   margin-left: 0;

@@ -253,7 +253,7 @@ const StyledListItem = styled(ListItem)`
   ul &:before {
     content: none;
   }
-  > *:first-child {
+  > * {
     flex: 1;
     width: 100%;
   }

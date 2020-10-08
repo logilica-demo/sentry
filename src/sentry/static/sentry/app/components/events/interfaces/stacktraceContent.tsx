@@ -92,7 +92,7 @@ export default class StacktraceContent extends React.Component<Props, State> {
       prevState => ({
         showCompleteFunctionName: !prevState.showCompleteFunctionName,
       }),
-      () => scrollToElement(`#${frameID}`)
+      () => scrollToElement(`#${frameID}`, {align: 'top', offset: -17, duration: -1})
     );
   };
 

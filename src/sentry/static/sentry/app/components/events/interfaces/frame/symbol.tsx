@@ -36,7 +36,7 @@ const Symbol = ({
       return undefined;
     }
 
-    if (showCompleteFunctionName) {
+    if (!showCompleteFunctionName) {
       return t('Expand function details');
     }
 
